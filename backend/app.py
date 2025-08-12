@@ -1,13 +1,16 @@
-from flask import Flask
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-# Flask 앱 생성
 app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# 기본 라우트
-@app.route("/")
+@app.get("/")
 def home():
     return "Flask is running!"
 
-if __name__ == "__main__":
-    # 로컬 개발 서버 실행
-    app.run(host="127.0.0.1", port=5000, debug=True)
+@app.post("/api/echo")
+def echo():
+    data = request.get_json() or {}
+    text = (data.get("text") or "").strip()
+    print(f"[ECHO] {text}")
+    return jsonify({"ok": True, "received": text})

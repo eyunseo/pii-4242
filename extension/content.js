@@ -119,5 +119,34 @@ function observeUI() {
   attachHandlers();
 }
 
+async function forwardSend(inputEl) {
+  const text = (readText(inputEl) || "").trim();
+  if (!text) return;
+
+  // 1) Flask로 전송
+  try {
+    const res = await fetch("http://127.0.0.1:5000/api/echo", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    console.log("🔁 Flask responded:", data);     // 콘솔 확인
+    // 경고창 표시
+    if (data?.ok) alert("Flask가 받은 텍스트:\n" + data.received);
+  } catch (e) {
+    console.warn("Flask 호출 실패", e);
+  }
+
+  // 2) 실제 전송
+  const btn = findSendButton();
+  if (!btn) return;
+  detachHandlers();
+  isForwarding = true;
+  try { btn.click(); }
+  finally { setTimeout(()=>{ isForwarding=false; attachHandlers(); }, 120); }
+}
+
+
 observeUI();
 console.log("🟢 content.js initialized");
