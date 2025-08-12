@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>PII 상세 리포트</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='report.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <h1>개인정보 <span class="hl">{{ type_count }}</span>건이 탐지되어 비식별 처리되었습니다.</h1>
+    <p class="subtitle">탐지된 데이터 종류:
+      {% for t in types %}
+        <span class="tag">{{ t }}</span>
+      {% endfor %}
+    </p>
+
+    <div class="cols">
+      <section class="card">
+        <h2>원본 데이터</h2>
+        <pre class="bubble">{{ original }}</pre>
+      </section>
+      <div class="arrow">➜</div>
+      <section class="card">
+        <h2>비식별 데이터</h2>
+        <pre class="bubble safe">{{ redacted }}</pre>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

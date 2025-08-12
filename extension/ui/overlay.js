@@ -1,4 +1,20 @@
-// extension/ui/overlay.js
+export function openReport(payload){
+  const f = document.createElement("form");
+  f.method = "POST";
+  f.action = "http://127.0.0.1:5000/report/preview";
+  f.target = "_blank";
+  const kv = {
+    original_text: payload.original_text || "",
+    redacted_text: payload.redacted_text || "",
+    types: JSON.stringify(payload.types || []),
+  };
+  Object.entries(kv).forEach(([k,v])=>{
+    const i=document.createElement("input"); i.type="hidden"; i.name=k; i.value=v;
+    f.appendChild(i);
+  });
+  document.body.appendChild(f); f.submit(); f.remove();
+}
+
 export async function showOverlay(payload) {
   // 1) Shadow DOM 컨테이너
   const host = document.createElement('div');
@@ -11,7 +27,7 @@ export async function showOverlay(payload) {
   style.rel = 'stylesheet'; style.href = cssURL;
   shadow.appendChild(style);
 
-  // 3) 템플릿 로드 & 복제 (innerHTML 미사용)
+  // 3) 템플릿 로드 & 복제
   const htmlURL = chrome.runtime.getURL('ui/overlay.html');
   const html = await fetch(htmlURL).then(r=>r.text());
   const tpl = document.createElement('template');
@@ -28,6 +44,7 @@ export async function showOverlay(payload) {
   // 5) 버튼 처리 → 선택 반환
   return new Promise((resolve)=>{
     const close = (val)=>{ host.remove(); resolve(val); };
+    shadow.getElementById('pii-report').onclick = () => openReport(payload);
     shadow.getElementById('use-original').addEventListener('click', ()=>close('original'));
     shadow.getElementById('use-redacted').addEventListener('click', ()=>close('redacted'));
   });

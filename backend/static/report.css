@@ -1,0 +1,22 @@
+:root{
+  --bg:#e7f6ff; --card:#fff; --text:#1c242b; --muted:#5b6b78;
+  --safe:#eafff1; --name:#17a34a; --cardc:#ef4444; --tel:#22c55e; --mail:#10b981;
+  --bubble:#f7fbff; --border:#dce8f3;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,apple sd gothic neo,Segoe UI}
+.wrap{max-width:1100px;margin:28px auto;padding:0 16px}
+h1{margin:0 0 6px;font-size:22px}
+.hl{color:#ef4444}
+.subtitle{margin:0 0 16px;color:var(--muted)}
+.tag{display:inline-block;margin-right:8px;padding:2px 8px;border-radius:6px;background:#eef5fb;border:1px solid var(--border);font-size:13px}
+.tag.name{color:var(--name)}
+.tag.card{color:var(--cardc)}
+.tag.tel{color:var(--tel)}
+.tag.mail{color:var(--mail)}
+.cols{display:grid;grid-template-columns:1fr 40px 1fr;gap:14px;align-items:center}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px}
+.card h2{margin:4px 0 10px}
+.bubble{background:var(--bubble);border:1px solid var(--border);border-radius:12px;padding:12px;white-space:pre-wrap;word-break:break-word}
+.bubble.safe{background:var(--safe);border-color:#bfe8c8}
+.arrow{font-size:36px;text-align:center;color:#94a3b8}

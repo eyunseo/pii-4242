@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from pii_guard.api import api_bp
+from report.view import report_bp
 
 app = Flask(__name__)
 CORS(
@@ -20,6 +21,7 @@ def home():
     return "Flask is running!"
 
 app.register_blueprint(api_bp, url_prefix="/api")
+app.register_blueprint(report_bp, url_prefix="/report")
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
