@@ -2,7 +2,7 @@ let lastPrompt = "";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "PROMPT_CAPTURED") {
-    console.log("📥 Captured prompt:", message.payload);
+    console.log("Captured prompt:", message.payload);
     lastPrompt = message.payload;
   }
 });

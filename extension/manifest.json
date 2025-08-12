@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Privacy Guard",
+  "name": "4242 PII Guard",
   "version": "1.0",
   "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": [
@@ -15,6 +15,10 @@
     "js": ["content.js"],
     "run_at": "document_idle",
     "all_frames": true
+  }],
+  "web_accessible_resources": [{
+    "resources": ["ui/*"],
+    "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*"]
   }],
   "action": { "default_popup": "popup.html" }
 }
