@@ -68,14 +68,14 @@ function setInputValue(el, text) {
     return true;
   }
 
-  // 기타 input
+  // Other input types
   el.value = text;
   el.dispatchEvent(new Event("input",  { bubbles: true, composed: true }));
   el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
   return true;
 }
 
-// paste 폴백 (React가 value를 덮어쓸 때)
+// Paste fallback (when React overwrites the value)
 function pasteFallback(el, text) {
   try {
     el.focus();
@@ -87,7 +87,7 @@ function pasteFallback(el, text) {
   } catch { return false; }
 }
 
-// React state가 실제로 반영되도록 1~2 프레임 대기
+// Wait 1–2 frames to ensure React state is applied
 function raf2() {
   return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
@@ -134,14 +134,14 @@ async function scanText(text){
   return r.json(); // { ok, original_text, redacted_text, entities, types }
 }
 
-/* ========== Main flow ========== */
+/* ========== Main workflow ========== */
 async function forwardSend(initialInputEl) {
-  // 제출 직전 기준 입력 요소를 다시 찾음
+  // Re-find the input element right before submission
   let inputEl = findActiveInputField() || initialInputEl;
   const original = (readText(inputEl) || "").trim();
   if (!original) return;
 
-  // 1) 서버 스캔
+  // 1) Server scan
   let payload;
   try { payload = await scanText(original); }
   catch(e){
@@ -151,30 +151,30 @@ async function forwardSend(initialInputEl) {
     return;
   }
 
-  // 2) 오버레이 선택
+  // 2) Overlay selection
   const { showOverlay } = await import(chrome.runtime.getURL('ui/overlay.js'));
   const choice = await showOverlay(payload); // 'original' | 'redacted'
   const finalText = (choice === 'redacted') ? (payload.redacted_text || original) : original;
 
-  // 3) 값 반영 (React state 동기화) — DOM 교체 가능성 있어서 다시 찾아야 됨
+  // 3) Apply value (synchronize with React state) — re-locate in case the DOM changes
   inputEl = findActiveInputField() || inputEl;
   let ok = setInputValue(inputEl, finalText);
   if (!ok || (readText(inputEl) || "") !== finalText) {
-    // 네이티브 setter가 막힐 때 paste 폴백
+    // Paste fallback when native setter is blocked
     pasteFallback(inputEl, finalText);
   }
 
-  // React가 내부 state를 적용할 시간 주는 설정
+  // Allow time for React to apply its internal state
   await raf2();
 
-  // 4) 제출
+  // 4) Submission
   detachHandlers();
   isForwarding = true;
   try { submitForm(inputEl); }
   finally { setTimeout(()=>{ isForwarding=false; attachHandlers(); }, 120); }
 }
 
-/* ========== Event wiring ========== */
+/* ========== Event binding ========== */
 function onKeyDown(e) {
   if (isForwarding) return;
   if (e.key === "Enter" && !e.shiftKey) {
@@ -217,3 +217,139 @@ function observeUI() {
 
 observeUI();
 console.log("🟢 content.js initialized");
+
+/* ========== [UPLOAD HOOKS v2] text & image detection (log-only) ========== */
+
+// 1) Determine file type
+function isTextLikeFile(file) {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return (
+    type.startsWith("text/") ||
+    type.includes("json") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".csv") ||
+    name.endsWith(".json")
+  );
+}
+
+function isImageFile(file) {
+  const type = (file.type || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+  // Check file extension as well in case MIME type is empty
+  return (
+    type.startsWith("image/") ||
+    name.endsWith(".png") ||
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".webp")
+  );
+}
+
+// 2) Preview reader
+function readFileAsTextPreview(file, maxLen = 200) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const txt = String(e.target.result || "");
+      resolve(txt.slice(0, maxLen));
+    };
+    reader.onerror = () => resolve("");
+    reader.readAsText(file);
+  });
+}
+
+function readImageAsDataURL(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result); // base64 data URL
+    reader.onerror = () => resolve("");
+    reader.readAsDataURL(file);
+  });
+}
+
+// (Optional) Example usage for sending file to server
+async function sendFileToServer(file, meta = {}) {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  fd.append("meta", JSON.stringify(meta));
+  // const res = await fetch("http://127.0.0.1:5000/analyze-file", { method: "POST", body: fd });
+  // return res.json();
+  return { ok: true, skipped: true, note: "demo (no server call)" };
+}
+
+// 3) Handle upload events
+async function handleUploadedFile(file, source = "file-input") {
+  const meta = { name: file.name, type: file.type, size: file.size, source, ts: Date.now() };
+
+  if (isTextLikeFile(file)) {
+    console.log("📎 [UPLOAD] text-like detected:", meta);
+    const preview = await readFileAsTextPreview(file);
+    console.log("📄 [UPLOAD] text preview:", preview);
+    // (Optional) Server analysis
+    // const result = await sendFileToServer(file, meta);
+    // console.log("🔎 server result:", result);
+    return;
+  }
+
+  if (isImageFile(file)) {
+    console.log("🖼 [UPLOAD] image detected:", meta);
+    const dataURL = await readImageAsDataURL(file);
+    console.log("🧪 [UPLOAD] image dataURL preview:", (dataURL || "").slice(0, 100) + "...");
+    // (Optional) Server OCR analysis
+    // const result = await sendFileToServer(file, meta);
+    // console.log("🔎 server result:", result);
+    return;
+  }
+
+  // Other formats
+  console.log("📦 [UPLOAD] other file detected:", meta);
+  // (Optional) Send to server for parsing (PDF/DOCX, etc.)
+  // const result = await sendFileToServer(file, meta);
+  // console.log("🔎 server result:", result);
+}
+
+// 4) Intercept input[type=file] (prevent duplicate attachment)
+function attachFileInputListener(root = document) {
+  const inputs = root.querySelectorAll('input[type="file"]:not([data-upload-hooked="1"])');
+  inputs.forEach((input) => {
+    input.dataset.uploadHooked = "1";
+    input.addEventListener(
+      "change",
+      async (event) => {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) return;
+        for (const f of files) {
+          await handleUploadedFile(f, "file-input");
+        }
+      },
+      { capture: true, passive: true } // Do not interrupt the default upload flow
+    );
+  });
+}
+
+// 5) Detect drag-and-drop (do not interrupt default upload flow)
+function attachDragDropListener(root = document) {
+  root.addEventListener(
+    "drop",
+    async (event) => {
+      const dt = event.dataTransfer;
+      if (!dt || !dt.files || !dt.files.length) return;
+      const files = Array.from(dt.files);
+      for (const f of files) {
+        await handleUploadedFile(f, "drag-and-drop");
+      }
+    },
+    { capture: true }
+  );
+}
+
+// 6) Observe DOM changes to hook into dynamically created file inputs
+(function observeUploadInputs() {
+  const ob = new MutationObserver(() => attachFileInputListener(document));
+  ob.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  attachFileInputListener(document);
+  attachDragDropListener(document);
+  console.log("🟢 upload hooks (text+image) installed");
+})();
+
