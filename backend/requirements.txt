@@ -20,3 +20,8 @@ tqdm>=4.65
 kiwipiepy==0.21.0
 kiwipiepy_model==0.21.0
 colorama>=0.4.6
+opencv-python-headless>=4.10.0.84
+easyocr>=1.7.1
+Pillow>=10.4.0
+numpy>=1.26.0
+imutils>=0.5.4
