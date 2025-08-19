@@ -3,7 +3,9 @@
     <div class="card">
       <h3>⚠️ 개인정보 감지</h3>
       <p id="types"></p>
-      <div class="cols">
+
+      <!-- 텍스트 비교 -->
+      <div class="cols" id="text-cols">
         <section>
           <h4>원본 데이터</h4>
           <pre id="orig"></pre>
@@ -13,10 +15,23 @@
           <pre id="redacted"></pre>
         </section>
       </div>
+
+      <!-- 이미지 비교 -->
+      <div class="cols" id="image-cols" style="display:none">
+        <section>
+          <h4>원본 이미지</h4>
+          <img id="origImg" style="max-width:100%;height:auto;border-radius:8px"/>
+        </section>
+        <section class="safe">
+          <h4>마스킹 이미지</h4>
+          <img id="maskedImg" style="max-width:100%;height:auto;border-radius:8px"/>
+        </section>
+      </div>
+
       <div class="actions">
         <button id="pii-report" class="ghost">리포트</button>
-        <button id="use-original">원본 데이터 사용</button>
-        <button id="use-redacted" class="primary">비식별 데이터 사용</button>
+        <button id="use-original">원본 사용</button>
+        <button id="use-redacted" class="primary">비식별본 사용</button>
       </div>
     </div>
   </div>
