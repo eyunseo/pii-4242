@@ -25,3 +25,5 @@ easyocr>=1.7.1
 Pillow>=10.4.0
 numpy>=1.26.0
 imutils>=0.5.4
+google-generativeai
+python-dotenv

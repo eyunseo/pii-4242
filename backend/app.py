@@ -2,19 +2,18 @@ from flask import Flask
 from flask_cors import CORS
 from pii_guard.api import api_bp
 from report.view import report_bp
+from dotenv import load_dotenv 
+import os
+import google.generativeai as genai
+
+load_dotenv()  # .env 불러오기
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 app = Flask(__name__)
-CORS(
-    app,
-    resources={
-        r"/api/*": {
-            "origins": ["https://chat.openai.com", "https://chatgpt.com"],
-            "methods": ["POST", "OPTIONS"],
-            "allow_headers": ["Content-Type"],
-            "max_age": 600,
-        }
-    },
-)
+CORS(app, resources={
+    r"/api/*":    {"origins": ["*"], "methods": ["POST", "OPTIONS"], "allow_headers": ["Content-Type"]},
+    r"/report/*": {"origins": ["*"], "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"]},
+})
 
 @app.get("/")
 def home():

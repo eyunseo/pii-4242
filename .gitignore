@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .DS_Store
 backend/pii_guard/models/model.safetensors
+.env

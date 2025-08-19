@@ -25,6 +25,29 @@
         <pre class="bubble safe">{{ redacted }}</pre>
       </section>
     </div>
+
+    <!-- GPT 위험 설명 (JSON → HTML 변환) -->
+     <!-- report.html 내, 위험 설명 섹션 -->
+    <section class="card mt">
+      <h2>위험 설명</h2>
+      <div id="risk-badges" class="badges"></div>
+      <p id="risk-summary" class="summary muted">(분석 중…)</p>
+      <div class="table-wrap">
+        <table id="risk-table" class="table" style="display:none;">
+          <thead>
+            <tr>
+              <th>유형</th><th>건수</th><th>영향</th><th>가능성</th><th>권장조치</th>
+            </tr>
+          </thead>
+          <tbody id="risk-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="gpt-report"></div>
   </div>
+
+  <!-- JS는 외부파일로 -->
+  <script src="{{ url_for('static', filename='report.js') }}"></script>
 </body>
 </html>
