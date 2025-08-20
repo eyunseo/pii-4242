@@ -102,38 +102,8 @@ def _validate_report(obj):
     out["findings"] = norm
     return out
 
-@report_bp.route("/preview_gpt", methods=["GET", "POST"])
+@report_bp.route("/preview_gpt", methods=["GET","POST"])
 def preview_gpt():
-    if request.method == "GET":
-        return render_template(
-            "newreport.html",
-            type_count=0, types=[], original="", redacted="", answer=""
-        )
-
-    original = (request.form.get("original_text") or "")[:10000]
-    redacted = (request.form.get("redacted_text") or "")[:10000]
-    answer   = (request.form.get("answer_text")   or "")[:12000]
-    raw_types = request.form.get("types") or ""
-
-    try:
-        if raw_types.strip().startswith("["):
-            types = json.loads(raw_types)
-        else:
-            types = [t.strip() for t in raw_types.split(",") if t.strip()]
-    except Exception:
-        types = []
-
-    if not (original or redacted):
-        return abort(400, "original_text or redacted_text required")
-
-    return render_template(
-        "newreport.html",
-        type_count=len(types),
-        types=types,
-        original=original,
-        redacted=redacted,
-        answer=answer
-    )
     if request.method == "GET":
         # 수동 테스트용 빈 페이지
         return render_template(
@@ -142,15 +112,14 @@ def preview_gpt():
         )
 
     original = (request.form.get("original_text") or "")[:10000]
-    redacted = (request.form.get("redacted_text") or "")[:10000]
+    redacted = (request.form.get("redacted_text") or "")[:12000]  # ← .bubble.safe에 들어감
     answer   = (request.form.get("answer_text")   or "")[:12000]
-    raw_types = request.form.get("types") or ""
+    raw_types= request.form.get("types") or ""
 
     try:
-        if raw_types.strip().startswith("["):
-            types = json.loads(raw_types)
-        else:
-            types = [t.strip() for t in raw_types.split(",") if t.strip()]
+        # JSON 배열 또는 콤마구분 둘 다 허용
+        types = (json.loads(raw_types) if raw_types.strip().startswith("[")
+                 else [t.strip() for t in raw_types.split(",") if t.strip()])
     except Exception:
         types = []
 
@@ -165,9 +134,6 @@ def preview_gpt():
         redacted=redacted,
         answer=answer
     )
-
-
-
 
 @report_bp.route("/preview", methods=["GET","POST"])
 def preview():
@@ -189,6 +155,201 @@ def preview():
         original=original, redacted=redacted)
 
 @report_bp.route("/gpt", methods=["POST","OPTIONS"])
+def gpt_report():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    data = request.get_json(silent=True) or {}
+    try: pii_count = int(data.get("piiCount") or 0)
+    except: pii_count = 0
+    by_type  = data.get("byType") or {}
+    examples = data.get("examples") or {}
+
+    redacted_data = (data.get("redactedData") or "")[:12000]
+
+    if not isinstance(by_type, dict):
+        by_type = {}
+    else:
+        by_type = {str(k): (int(v) if str(v).isdigit() else 0) for k, v in by_type.items()}
+    types_list = [k for k, v in by_type.items() if v > 0]
+    type_count = len(types_list)
+
+    safe_examples_in = {}
+    if isinstance(examples, dict):
+        for k, arr in examples.items():
+            vals = []
+            if isinstance(arr, list):
+                for v in arr[:2]:
+                    vals.append(_mask_like(str(v)))
+            safe_examples_in[str(k)] = vals
+
+    items_for_llm = []
+    for t, cnt in by_type.items():
+        if cnt <= 0: 
+            continue
+        rule = RULES.get(t, {})
+        ex_list = safe_examples_in.get(t) or []
+        example = ex_list[0] if ex_list else f"[{t}_1]"
+        items_for_llm.append({
+            "pii_type": t,
+            "count": cnt,
+            "detector": rule.get("detector", "") or "정규표현식/NER/규칙",
+            "evidence_hint": rule.get("evidence", ""),
+            "example": example
+        })
+
+    paren, total_cnt = _format_counts(by_type)
+    summary_prefix = f"총 개인정보가{paren} {total_cnt}건 탐지되었으며, " if total_cnt > 0 else ""
+
+    try:
+        import google.generativeai as genai
+        api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+        if not api_key:
+            return jsonify({"ok": False, "error": "GOOGLE_API_KEY not set"}), 500
+        genai.configure(api_key=api_key)
+
+        # ── sys_prompt: overall_risk / reason 제거, summary는 위험도 문구 없이 ──
+        sys_prompt = """
+역할: 개인정보 위험 분석 보고서 작성자.
+입력으로는 '비식별 데이터(redactedData)'와 항목별 'detector'(탐지 방식 요약), 'evidence_hint'(분류 근거 힌트), 'example'(비식별 예시)가 제공됩니다.
+원문 추정/복원 금지. 한국어, 짧고 명확한 문장. JSON 외 텍스트 출력 금지.
+
+[출력 스키마]
+{
+  "summary": string,          // (1) 종합 설명. 각 문장은 \\n으로 구분. 첫 문장은 summary_prefix로 시작. (위험도 문구 넣지 않음)
+  "combined_risk": string,    // 2가지 이상일 때 결합 위험과 사례 1문장 이상. 1가지면 비워도 됨.
+  "findings": [
+    {
+      "pii_type": string,
+      "count": number,
+      "impact": string,           // (2) '유출되면 …'로 시작하는 1~2문장. 유형 고유의 위험만 간결히.
+      "recommendation": string,   // (2) 유형 맞춤 명령형 한 문장. 예: "전화번호는 전체 마스킹 후 공유"
+      "example": string,          // 입력 example 그대로 복사
+      "evidence": string          // (1) 라벨/콜론 없이 자연어 한 문장(정규표현식/NER/검증 규칙을 요약)
+    }
+  ]
+}
+
+[작성 규칙]
+- (1) 탐지 근거(evidence):
+  • 라벨/콜론 없이 자연어 한 문장으로 작성. 예) "카드번호 길이와 Luhn 검사를 충족해 카드번호 형식으로 식별되었습니다."
+- (2) 위험 설명/권장조치:
+  • impact는 "유출되면"으로 시작하는 1~2문장. 일반론/정책 문구 금지.
+  • recommendation은 즉시 취할 수 있는 행동을 명령형 한 문장으로.
+- (3) 요약 설명(summary):
+  • 유형이 1가지면: 해당 유형의 유출 위험 사례를 포함해 2문장.
+  • 유형이 2가지 이상이면: 함께 유출될 때의 결합 위험을 사례와 함께 2~3문장.
+  • 각 문장은 \\n으로 구분. 첫 문장은 summary_prefix로 시작.
+- '유출될 경우' 대신 '유출되면'만 사용.
+- '정책 준수/지속적 모니터링/신속 조치' 등 일반적 당위 문구 금지.
+""".strip()
+
+        user_prompt = (
+            f"summary_prefix: {summary_prefix}\n"
+            f"type_count: {type_count}\n"
+            f"types: {json.dumps(types_list, ensure_ascii=False)}\n\n"
+            f"[비식별 데이터]\n{redacted_data}\n\n"
+            f"[항목 목록]\n{json.dumps(items_for_llm, ensure_ascii=False)}\n\n"
+            f"[전체 통계]\n총 건수: {pii_count}, 유형별 건수: {json.dumps(by_type, ensure_ascii=False)}\n\n"
+            "요청:\n"
+            "- findings: example은 입력값 그대로 복사.\n"
+            "- findings: evidence는 라벨/콜론 없이 자연어 한 문장으로 작성.\n"
+            "- summary: 위 규칙에 따라 작성하고, 각 문장을 \\n으로 구분.\n"
+        )
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        generation_config = {"temperature": 0, "response_mime_type": "application/json"}
+        resp = model.generate_content(
+            [{"role":"user","parts":[sys_prompt+"\n\n"+user_prompt]}],
+            generation_config=generation_config,
+        )
+
+        txt = ""
+        try:
+            txt = resp.text or ""
+        except Exception:
+            try:
+                txt = resp.candidates[0].content.parts[0].text
+            except Exception:
+                txt = ""
+        s = (txt or "").strip()
+        if s.startswith("```"):
+            s = s.strip("`")
+            if "\n" in s: s = s.split("\n",1)[1]
+        try:
+            raw = json.loads(s)
+        except Exception:
+            raw = {}
+
+        report = _validate_report(raw)
+
+        if not report.get("combined_risk"):
+            keys = set((by_type or {}).keys())
+            if len(keys) >= 2:
+                report["combined_risk"] = "여러 개인정보가 함께 노출되면 개인 식별과 접근이 쉬워져 표적 피싱이나 계정 탈취로 이어질 수 있습니다."
+            else:
+                report["combined_risk"] = ""
+
+        items_by_type = {it["pii_type"]: it for it in items_for_llm}
+        out_rows, seen = [], set()
+        for f in report.get("findings", []):
+            t = f.get("pii_type")
+            if not t: 
+                continue
+            base = items_by_type.get(t, {})
+            det = base.get("detector") or RULES.get(t, {}).get("detector", "")
+            evh = base.get("evidence_hint") or RULES.get(t, {}).get("evidence", "")
+            if not f.get("evidence"):
+                # 자연어 한 문장
+                if det or evh:
+                    f["evidence"] = f"{(det+'을(를) 활용' if det else '규칙 기반')}해 검사했으며, {evh}로 {t} 형식과 일치합니다.".strip()
+                else:
+                    f["evidence"] = f"{t}의 일반적 패턴과 일치합니다."
+            if not f.get("example"):
+                f["example"] = base.get("example", f"[{t}_1]")
+            out_rows.append(f); seen.add(t)
+
+        for t, it in items_by_type.items():
+            if t in seen: 
+                continue
+            det = it.get("detector") or RULES.get(t, {}).get("detector", "")
+            evh = it.get("evidence_hint") or RULES.get(t, {}).get("evidence", "")
+            out_rows.append({
+                "pii_type": t,
+                "count": it.get("count", 0),
+                "impact": "",
+                "recommendation": "",
+                "example": it.get("example", f"[{t}_1]"),
+                "evidence": (f"{(det+'을(를) 활용' if det else '규칙 기반')}해 검사했으며, {evh}로 {t} 형식과 일치합니다.").strip() if (det or evh) else f"{t}의 일반적 패턴과 일치합니다.",
+            })
+
+        report["findings"] = out_rows
+        report["summary"] = _clean_sentence(report.get("summary",""))
+        report["combined_risk"] = _clean_sentence(report.get("combined_risk",""))
+
+        return jsonify({"ok": True, "report": report})
+
+    except Exception as e:
+        # 실패 시 안전 폴백
+        fallback = {
+            "summary": "자동 분석을 완료하지 못했습니다.\n탐지된 항목을 확인한 뒤 민감 정보는 공유 전에 제거하거나 마스킹하세요.",
+            "combined_risk": "",
+            "findings": [
+                {
+                    "pii_type": k,
+                    "count": int(v or 0),
+                    "impact": "",
+                    "recommendation": "",
+                    "example": f"[{k}_1]",
+                    "evidence": RULES.get(k,{}).get("evidence",""),
+                }
+                for k, v in (by_type.items() if isinstance(by_type, dict) else [])
+            ]
+        }
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}", "report": _validate_report(fallback)}), 200
+
+
+@report_bp.route("/preview_gpt", methods=["POST","OPTIONS"])
 def gpt_report():
     if request.method == "OPTIONS":
         return ("", 204)

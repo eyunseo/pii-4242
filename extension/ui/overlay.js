@@ -226,5 +226,15 @@ export async function showCombinedOverlay({ text, image, files }) {
     close(res);
   });
 
+  try {
+    if (text) {
+      window.__piiReportContext = {
+        original_text: text.original || "",
+        redacted_text: text.redacted || "",
+        types: Array.isArray(text.types) ? text.types : []
+      };
+    }
+  } catch {}
+
   return p;
 }
