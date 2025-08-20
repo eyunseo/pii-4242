@@ -7,15 +7,19 @@ from .pii_masking import (
     ner, mask_one, LABELS_KOR, normalize_text,
 )
 
+from .pii_fakedata import (
+    ner, fake_one, LABELS_KOR, normalize_text,
+)
+
 def _ner_entities(text: str) -> List[Dict[str, Any]]:
-    text_norm = normalize_text(text)
-    raw = ner(text_norm) 
+    text_norm = normalize_text(text or "")
+    raw = ner(text_norm)
     ents: List[Dict[str, Any]] = []
     for e in raw:
         label = e.get("entity_group") or e.get("label") or e.get("entity") or ""
         ents.append({
             "label": label,
-            "type": LABELS_KOR.get(label, label),  
+            "type": LABELS_KOR.get(label, label),
             "word": e.get("word", ""),
             "start": int(e.get("start", 0)),
             "end": int(e.get("end", 0)),
@@ -26,20 +30,40 @@ def _ner_entities(text: str) -> List[Dict[str, Any]]:
 
 
 def _collect_types_and_count(texts: List[str]) -> Tuple[List[str], int]:
-    tset = set()
+    tset: set[str] = set()
     total = 0
     for t in texts:
-        for e in _ner_entities(t):
+        ents = _ner_entities(t or "")
+        for e in ents:
             tset.add(e["type"])
-            total += 1
+        total += len(ents)
     return sorted(tset), total
+
+
+def _restore_with_map(text: str, restore_map: Dict[str, str]) -> str:
+    if not restore_map:
+        return text
+    restored = text
+    for fake in sorted(restore_map.keys(), key=len, reverse=True):
+        orig = restore_map[fake]
+        restored = restored.replace(fake, orig)
+    return restored
+
 
 def detect_and_redact(text: str) -> Dict[str, Any]:
     text_norm = normalize_text(text or "")
+
     entities = _ner_entities(text_norm)
     types = sorted({e["type"] for e in entities})
 
     redacted = mask_one(text_norm, state=None)
+
+    state_for_fake: Dict[str, Any] = {}
+    fake_text = fake_one(text_norm, state=state_for_fake)
+    fake_map: Dict[str, str] = state_for_fake.get("fake_map", {})  
+    restore_map: Dict[str, str] = {v: k for k, v in fake_map.items()}  
+
+    restored_example = _restore_with_map(fake_text, restore_map)
 
     return {
         "ok": True,
@@ -47,7 +71,12 @@ def detect_and_redact(text: str) -> Dict[str, Any]:
         "redacted_text": redacted,
         "entities": entities,
         "types": types,
+        "fake_text": fake_text,
+        "fake_map": fake_map,
+        "restore_map": restore_map,
+        "restored_example": restored_example,
     }
+
 
 def mask_csv_bytes(name: str, data: bytes) -> Dict[str, Any]:
     sio = io.StringIO(data.decode("utf-8", errors="ignore"))
@@ -84,7 +113,6 @@ def mask_csv_bytes(name: str, data: bytes) -> Dict[str, Any]:
         "masked_mime": "text/csv",
         "masked_name": f"masked_{name or 'data.csv'}",
     }
-
 
 def mask_json_bytes(name: str, data: bytes, is_jsonl: bool = False) -> Dict[str, Any]:
     text = data.decode("utf-8", errors="ignore").strip()

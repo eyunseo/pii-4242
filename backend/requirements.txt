@@ -25,3 +25,4 @@ numpy>=1.26.0
 imutils>=0.5.4
 google-generativeai
 python-dotenv
+faker>=30.0.0

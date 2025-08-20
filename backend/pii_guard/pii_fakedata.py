@@ -166,7 +166,7 @@ def replace_entities_with_fake(text: str, entities: List[Dict[str, Any]], state:
             elif label == "SSN" and validate_ssn(value): fake_value = faker.ssn()
             elif label == "CC":
                 candidate = faker.credit_card_number()
-                while not luhn_check(candidate):  # Luhn 검사 통과할 때까지 생성
+                while not luhn_check(candidate):  
                     candidate = faker.credit_card_number()
                 fake_value = candidate
                 fake_value = re.sub(r"(\d{4})(?=\d)", r"\1-", fake_value)
@@ -183,7 +183,7 @@ def replace_entities_with_fake(text: str, entities: List[Dict[str, Any]], state:
         offset += len(fake_value)-(end-start)
     return masked
 
-def replace_pii_with_fake(raw_text: str, state: Dict[str, Any] | None = None, allow_labels: Set[str] | None = None) -> str:
+def fake_one(raw_text: str, state: Dict[str, Any] | None = None, allow_labels: Set[str] | None = None) -> str:
     text = normalize_text(raw_text)
     final = merge_entities(text, ner(text))
     final = add_email_entities(text, final)
@@ -197,4 +197,4 @@ if __name__ == "__main__":
         "이메일 a@b.com 이 다시 등장, 새 메일 c@d.com",
     ]
     state: Dict[str, Any] = {}
-    for s in samples: print(replace_pii_with_fake(s, state=state))
+    for s in samples: print(fake_one(s, state=state))
