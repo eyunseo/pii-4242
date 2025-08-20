@@ -212,10 +212,16 @@
     waitingForNextAssistant = false;
     targetAssistantTurn = null;
 
+    const ctx = window.__piiReportContext || {};
+    const meta = {
+      redacted_prompt: ctx.redacted_text || "",
+      types: Array.isArray(ctx.types) ? ctx.types : []
+    };
+
     const action = await showAnswerOverlay({
       prompt: lastPromptSnapshot || "(질문)",
       answer: normalized,
-      meta: null
+      meta
     });
 
     if (action === 'insert') {
@@ -340,45 +346,62 @@
     window.AnswerOverlay = Object.assign(window.AnswerOverlay || {}, { show: showAnswerOverlay });
   }
 
-
   function openNewReport({ original_text, redacted_text, answer_text, types }) {
     const BASE = "http://127.0.0.1:5000";
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = `${BASE}/report/preview_gpt`;   // report처럼 HTTP로 열기
+    form.action = `${BASE}/report/preview_gpt`;
     form.target = "_blank";
 
     const add = (k, v) => {
       const i = document.createElement("input");
       i.type = "hidden"; i.name = k;
-      i.value = Array.isArray(v) ? v.join(",") : String(v ?? "");
+      i.value = (k === "types")
+        ? JSON.stringify(Array.isArray(v) ? v : [])
+        : String(v ?? "");
+
       form.appendChild(i);
     };
+
     add("original_text", original_text || "");
-    add("redacted_text", redacted_text || "");
+    add("redacted_text", redacted_text || "");   // ★ .bubble.safe 로 들어감 (필수)
     add("answer_text",   answer_text   || "");
-    add("types",         types || []);
+    add("types",         types || []);           // ★ 건수/배지 계산에 필요
 
     document.body.appendChild(form);
     form.submit();
     form.remove();
   }
 
-  const reportBtn = shadow.getElementById('ans-report');
+  // showAnswerOverlay(...) 내부 버튼 바인딩
+  const reportBtn = shadow.getElementById("ans-report");
   if (reportBtn) {
-    reportBtn.addEventListener('click', () => {
+    reportBtn.addEventListener("click", () => {
+      const ctx = window.__piiReportContext || {};
+      const effTypes = Array.isArray(meta?.types) ? meta.types :
+                      (Array.isArray(ctx.types) ? ctx.types : []);
       openNewReport({
-        original_text: prompt ?? '',
-        redacted_text: meta?.redacted_prompt ?? '',
-        answer_text:   String(answer ?? ''),
-        types:         meta?.types || []
+        original_text: (typeof prompt === "string" ? prompt : "") || "",
+        redacted_text: (meta?.redacted_prompt ?? ctx.redacted_text ?? "") || "",
+        answer_text:   String(answer ?? ""),
+        types:         effTypes
       });
     });
   }
 
-btn.addEventListener("click", () => {
-  window.open("/newreport", "_blank");
-});
+
+
+  btn.addEventListener("click", () => {
+    window.open("/newreport", "_blank");
+  });
+
+  // 비식별 확정 직후(너의 기존 확정 지점에 추가)
+  // 비식별 확정 직후(너의 기존 확정 지점에 추가)
+  window.__piiReportContext = {
+    original_text: text?.original || "",
+    redacted_text: text?.redacted || "",
+    types: Array.isArray(text?.types) ? text.types : []
+  };
 
   console.log(LOG_PREFIX, "ready: arm on send; capture first assistant answer; show overlay.");
 })();

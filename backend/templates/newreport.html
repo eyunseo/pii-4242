@@ -15,6 +15,7 @@
       {% endfor %}
     </p>
 
+    <!-- 원본 → 비식별 (여기서 .bubble.safe 가 report.js의 입력이 됨) -->
     <div class="cols">
       <section class="card">
         <h2>원본 데이터</h2>
@@ -23,11 +24,11 @@
       <div class="arrow">➜</div>
       <section class="card">
         <h2>비식별 데이터</h2>
-
         <pre class="bubble safe">{{ redacted }}</pre>
       </section>
     </div>
 
+    <!-- 모델 답변 + 오른쪽 패널 -->
     <div class="cols mt">
       <section class="card">
         <h2>모델 답변</h2>
@@ -40,12 +41,14 @@
       </section>
     </div>
 
+    <!-- 요약 설명 -->
     <section class="card mt">
       <h2>요약 설명</h2>
       <div id="risk-badges" class="badges"></div>
       <p id="risk-summary" class="summary muted">(분석 중…)</p>
     </section>
 
+    <!-- 결과 요약 -->
     <section class="card mt">
       <h2>결과 요약</h2>
       <div class="table-wrap">
@@ -64,6 +67,7 @@
       </div>
     </section>
 
+    <!-- 상세 설명 -->
     <section class="card mt">
       <h2>상세 설명</h2>
       <div class="table-wrap">
@@ -83,6 +87,7 @@
     </section>
   </div>
 
+  <!-- ★ report.js 그대로 재사용: .bubble.safe / .tag 읽어서 /report/gpt 로 분석 요청 -->
   <script src="{{ url_for('static', filename='report.js') }}"></script>
 </body>
 </html>
