@@ -14,12 +14,12 @@
   "background": { "service_worker": "background.js" },
   "content_scripts": [{
     "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*", "https://gemini.google.com/*"],
-    "js": ["content.js"],
+    "js": ["content.js", "ui/newoverlay.js"],
     "run_at": "document_idle",
     "all_frames": true
   }],
   "web_accessible_resources": [{
-    "resources": ["ui/*", "ui/overlay.js"],
+    "resources": ["ui/*", "ui/overlay.js", "ui/overlay.css", "ui/newoverlay.js", "ui/newoverlay.html","ui/newreport.html"],
     "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*", "https://gemini.google.com/*"]
   }],
   "action": { "default_popup": "popup.html" }

@@ -1,0 +1,35 @@
+<template id="gpt-answer-tpl">
+  <div id="overlay" role="dialog" aria-modal="true">
+    <div class="card">
+      <div class="head">
+        <h3>💬 답변 미리보기</h3>
+        <div id="badges" class="badges"></div>
+      </div>
+
+      <div class="body" id="body">
+        <div class="cols" id="answer-cols">
+          <!-- 왼쪽: 모델 답변 (출력) -->
+          <section class="safe">
+            <h4>모델 답변</h4>
+            <pre id="modelAnswerLeft" class="bubble"></pre>
+          </section>
+
+          <!-- 오른쪽: 남겨둔 공간(추후용) -->
+          <section>
+            <h4>오른쪽 패널</h4>
+            <div id="rightPanel" class="bubble" style="min-height:140px; white-space:pre-wrap;"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="actions" id="actions">
+        <button id="ans-cancel" class="ghost">닫기</button>
+        <button id="ans-copy" class="ghost">복사</button>
+        <!--  <button id="ans-insert" class="primary">채팅창에 넣기</button> -->
+        <button id="ans-report" class="ghost">리포트</button>
+      </div>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='report.js') }}"></script>
+
+</template>

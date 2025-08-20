@@ -14,6 +14,105 @@ const raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimation
 const wait = (ms)=> new Promise(r=> setTimeout(r, ms));
 const isVisible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects?.().length);
 
+async function __showAnswerOverlay(fullText) {
+  const userSel = '[data-message-author-role="user"], [data-testid="conversation-turn"][data-message-author-role="user"]';
+  const users = document.querySelectorAll(userSel);
+  const lastUser = users.length ? users[users.length-1] : null;
+  const prompt = lastUser ? (lastUser.innerText || lastUser.textContent || "(질문)") : "(질문)";
+
+  const url = (chrome?.runtime||browser?.runtime)?.getURL?.('ui/newoverlay.js') || '/ui/newoverlay.js';
+  let show = globalThis.AnswerOverlay?.show;
+
+  if (typeof show !== 'function') {
+    let mod = null;
+    try { mod = await import(/* @vite-ignore */ url); } catch {}
+    show = mod?.showAnswerOverlay || (typeof mod?.default === 'function' ? mod.default : show);
+  }
+
+  if (typeof show !== 'function') {
+    console.warn('[overlay] showAnswerOverlay not found (window/export 둘 다 없음)'); 
+    return;
+  }
+
+  const action = await show({ prompt, answer: fullText, meta: null });
+}
+
+let __armTime = 0;
+let __awaitAnswer = false;
+let __baseline = { count: 0, lastLen: 0, lastEl: null };
+const __ASSIST_SEL = '[data-testid="conversation-turn"][data-message-author-role="assistant"], [data-message-author-role="assistant"]';
+const __ASSIST_BODY = '.markdown.prose, .prose, [data-testid="assistant-turn"]';
+
+function __snapshotAssistant() {
+  const turns = Array.from(document.querySelectorAll(__ASSIST_SEL));
+  const count = turns.length;
+  const last = count ? turns[count-1] : null;
+  const body = last?.querySelector?.(__ASSIST_BODY) || last;
+  const len  = (body?.innerText || body?.textContent || '').trim().length;
+  __baseline = { count, lastLen: len, lastEl: last };
+}
+
+function __armOneShot() {
+  __awaitAnswer = true;
+  __armTime = Date.now();
+  __snapshotAssistant();
+}
+
+
+const __origForwardSend = forwardSend;
+forwardSend = async function(...args) {
+  try {
+    __armOneShot();
+  } catch(e) {}
+  return await __origForwardSend.apply(this, args);
+};
+
+
+const __ob = new MutationObserver(async (mutations) => {
+  if (!__awaitAnswer) return;
+
+  let changed = false;
+  for (const m of mutations) {
+    for (const n of m.addedNodes || []) {
+      if (!(n instanceof HTMLElement)) continue;
+      if (n.matches?.(__ASSIST_SEL) || n.querySelector?.(__ASSIST_SEL)) changed = true;
+      if (n.matches?.(__ASSIST_BODY) || n.querySelector?.(__ASSIST_BODY)) changed = true;
+    }
+    if (m.type === 'characterData') {
+      const host = m.target?.parentElement;
+      if (host?.closest?.(__ASSIST_SEL) || host?.closest?.(__ASSIST_BODY)) changed = true;
+    }
+  }
+  if (!changed) return;
+
+  const turns = Array.from(document.querySelectorAll(__ASSIST_SEL));
+  const count = turns.length;
+
+
+  if (count > __baseline.count) {
+    const last = turns[count-1];
+    const body = last?.querySelector?.(__ASSIST_BODY) || last;
+    const txt  = (body?.innerText || body?.textContent || '').trim();
+    if (txt) {
+      __awaitAnswer = false;
+      await __showAnswerOverlay(txt);
+      return;
+    }
+  }
+
+
+  if (count === __baseline.count && __baseline.lastEl) {
+    const body = __baseline.lastEl?.querySelector?.(__ASSIST_BODY) || __baseline.lastEl;
+    const txt  = (body?.innerText || body?.textContent || '').trim();
+    if (txt.length > __baseline.lastLen) {
+      __awaitAnswer = false;
+      await __showAnswerOverlay(txt);
+      return;
+    }
+  }
+});
+__ob.observe(document.documentElement, { childList:true, subtree:true, characterData:true });
+
 function getDeepActiveElement(root = document) {
   let a = root.activeElement || document.activeElement;
   while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement;

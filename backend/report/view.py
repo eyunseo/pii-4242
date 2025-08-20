@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 report_bp = Blueprint("report", __name__)
 load_dotenv()
 
-# 유형별 고정 룰: 영향도/탐지 근거/탐지 방식(자연어 근거 생성을 돕는 힌트)
 RULES = {
     "주민등록번호":  {"impact": "1등급", "evidence": "6자리-7자리 구조와 생년월일 유효성 검사를 통과", "detector": "정규표현식+형식검증"},
     "외국인등록번호": {"impact": "1등급", "evidence": "6자리-7자리 구조와 7번째 자리 규칙 반영",           "detector": "정규표현식+형식검증"},
@@ -52,7 +51,6 @@ def _clean_sentence(s: str) -> str:
     if not s: return ""
     t = str(s)
     t = t.replace("유출될 경우", "유출되면")
-    # 불필요한 일반론 제거
     ban = [
         r"개인정보보호\s*정책을\s*준수.*?$",
         r"지속적인\s*모니터링.*?$",
@@ -104,6 +102,73 @@ def _validate_report(obj):
     out["findings"] = norm
     return out
 
+@report_bp.route("/preview_gpt", methods=["GET", "POST"])
+def preview_gpt():
+    if request.method == "GET":
+        return render_template(
+            "newreport.html",
+            type_count=0, types=[], original="", redacted="", answer=""
+        )
+
+    original = (request.form.get("original_text") or "")[:10000]
+    redacted = (request.form.get("redacted_text") or "")[:10000]
+    answer   = (request.form.get("answer_text")   or "")[:12000]
+    raw_types = request.form.get("types") or ""
+
+    try:
+        if raw_types.strip().startswith("["):
+            types = json.loads(raw_types)
+        else:
+            types = [t.strip() for t in raw_types.split(",") if t.strip()]
+    except Exception:
+        types = []
+
+    if not (original or redacted):
+        return abort(400, "original_text or redacted_text required")
+
+    return render_template(
+        "newreport.html",
+        type_count=len(types),
+        types=types,
+        original=original,
+        redacted=redacted,
+        answer=answer
+    )
+    if request.method == "GET":
+        # 수동 테스트용 빈 페이지
+        return render_template(
+            "newreport.html",
+            type_count=0, types=[], original="", redacted="", answer=""
+        )
+
+    original = (request.form.get("original_text") or "")[:10000]
+    redacted = (request.form.get("redacted_text") or "")[:10000]
+    answer   = (request.form.get("answer_text")   or "")[:12000]
+    raw_types = request.form.get("types") or ""
+
+    try:
+        if raw_types.strip().startswith("["):
+            types = json.loads(raw_types)
+        else:
+            types = [t.strip() for t in raw_types.split(",") if t.strip()]
+    except Exception:
+        types = []
+
+    if not (original or redacted):
+        return abort(400, "original_text or redacted_text required")
+
+    return render_template(
+        "newreport.html",
+        type_count=len(types),
+        types=types,
+        original=original,
+        redacted=redacted,
+        answer=answer
+    )
+
+
+
+
 @report_bp.route("/preview", methods=["GET","POST"])
 def preview():
     if request.method == "GET":
@@ -133,10 +198,9 @@ def gpt_report():
     except: pii_count = 0
     by_type  = data.get("byType") or {}
     examples = data.get("examples") or {}
-    # ✅ 용어 통일: 비식별 데이터
+
     redacted_data = (data.get("redactedData") or "")[:12000]
 
-    # by_type 정규화 및 리스트/개수
     if not isinstance(by_type, dict):
         by_type = {}
     else:
@@ -144,7 +208,6 @@ def gpt_report():
     types_list = [k for k, v in by_type.items() if v > 0]
     type_count = len(types_list)
 
-    # 예시가 원문이면 즉석 마스킹
     safe_examples_in = {}
     if isinstance(examples, dict):
         for k, arr in examples.items():
@@ -154,7 +217,6 @@ def gpt_report():
                     vals.append(_mask_like(str(v)))
             safe_examples_in[str(k)] = vals
 
-    # LLM용 항목 목록
     items_for_llm = []
     for t, cnt in by_type.items():
         if cnt <= 0: 
@@ -170,7 +232,6 @@ def gpt_report():
             "example": example
         })
 
-    # 요약 prefix
     paren, total_cnt = _format_counts(by_type)
     summary_prefix = f"총 개인정보가{paren} {total_cnt}건 탐지되었으며, " if total_cnt > 0 else ""
 
@@ -256,7 +317,6 @@ def gpt_report():
 
         report = _validate_report(raw)
 
-        # combined_risk 보강(요약은 위험도 문구 없이, 결합 위험은 여기 유지)
         if not report.get("combined_risk"):
             keys = set((by_type or {}).keys())
             if len(keys) >= 2:
@@ -264,7 +324,6 @@ def gpt_report():
             else:
                 report["combined_risk"] = ""
 
-        # findings 누락 필드 폴백: evidence/example만 최소 보장 (reason은 제거되었음)
         items_by_type = {it["pii_type"]: it for it in items_for_llm}
         out_rows, seen = [], set()
         for f in report.get("findings", []):
