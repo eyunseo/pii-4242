@@ -498,7 +498,7 @@ def trim_postpositions_with_kiwi(entities: List[Dict[str, Any]], text: str) -> L
 if __name__ == "__main__":
     samples = [
         "구매시간 2025-08-18 15:32 결제완료 / 카드 1234-5678-9012-3456",
-        "홍길동 010-1234-5678 / a@b.com / 600731-4994581 / 12-345678-90",
+        "이민형 010-1234-5678 / a@b.com / 600731-4994581",
         "이메일 a@b.com 이 다시 등장, 새 메일 c@d.com",
     ]
     state: Dict[str, Any] = {}
