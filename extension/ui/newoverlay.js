@@ -60,6 +60,35 @@
     shadowRoot.appendChild(node.content.cloneNode(true));
   }
 
+function escapeRegExp(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function applyMapLongestFirst(text, map){
+  if (!map || !Object.keys(map).length) return String(text ?? '');
+  let out = String(text ?? '');
+  const keys = Object.keys(map).sort((a,b)=> b.length - a.length); 
+  for (const k of keys){
+    const v = map[k];
+    if (!k || v == null) continue;
+    out = out.replace(new RegExp(escapeRegExp(k), 'g'), String(v));
+  }
+  return out;
+}
+
+function buildFakeToOrigMap(meta){
+  const m = meta?.mapping || {};
+  const red = String(meta?.redacted_prompt || '');
+
+  const assumeDirect = { ...m };                
+  const assumeInvert = {};                      
+  for (const [k,v] of Object.entries(m)) assumeInvert[v] = k;
+
+  const score = (map) => Object.keys(map).reduce(
+    (acc,k)=> acc + (red.includes(k) ? 1 : 0), 0
+  );
+  const f2o = score(assumeDirect) >= score(assumeInvert) ? assumeDirect : assumeInvert;
+  return f2o;
+}
+
   async function showAnswerOverlay({ prompt, answer, meta }) {
     const host = document.createElement('div');
     const shadow = host.attachShadow({mode:'open'});
@@ -76,7 +105,6 @@
       badges.appendChild(s);
     };
 
-    // 배지(있으면)
     if (meta?.model) addBadge(`모델: ${meta.model}`);
     if (typeof meta?.latency_ms === 'number') addBadge(`지연: ${Math.round(meta.latency_ms)}ms`);
     if (meta?.tokens?.total || meta?.tokens?.prompt || meta?.tokens?.completion) {
@@ -85,17 +113,35 @@
       addBadge(`토큰: ${total}`);
     }
 
-    // 본문
     const promptEl = shadow.getElementById('userPrompt') || shadow.getElementById('user-question');
     const answerEl = shadow.getElementById('modelAnswerLeft') || shadow.getElementById('modelAnswer') || shadow.getElementById('gpt-answer');
     if (promptEl) promptEl.textContent = String(prompt ?? '');
     if (answerEl) answerEl.textContent = String(answer ?? '');
+    
+    try {
+      const ovRoot = shadow;
 
-    // 버튼
+      const rightEl =
+        ovRoot.getElementById('rightPanel') ||
+        ovRoot.getElementById('restoredAnswer') ||
+        ovRoot.getElementById('modelAnswerRight') ||
+        ovRoot.getElementById('right-panel') ||
+        ovRoot.querySelector('.right-panel, [data-role="right-answer"]');
+
+      if (rightEl) {
+        const metaObj = meta || window.__FAKE_PROMPT__ || {};
+        const f2o = buildFakeToOrigMap(metaObj);
+        const restored = applyMapLongestFirst(String(answer ?? ''), f2o);
+        rightEl.textContent = restored || '';
+      }
+    } catch (e) {
+      console.warn('[overlay] restore failed', e);
+      if (rightEl) rightEl.textContent = '';        
+    }
+
     const btnClose  = shadow.getElementById('ans-cancel') || shadow.getElementById('answer-close');
     const btnCopy   = shadow.getElementById('ans-copy');
     const btnInsert = shadow.getElementById('ans-insert');
-    // (B) 리포트 버튼 핸들러
     const reportBtn = shadow.getElementById('ans-report');
     if (reportBtn) {
       reportBtn.addEventListener('click', () => {
@@ -107,8 +153,6 @@
         });
       });
     }
-
-
 
     return await new Promise((resolve)=> {
       btnClose?.addEventListener('click', ()=> { host.remove(); resolve('close'); });
@@ -131,7 +175,7 @@
   let lastArmAt = 0;
   let targetAssistantTurn = null;
   let baseline = { count: 0, lastEl: null, lastLen: 0, ts: 0 };
-  let lastPromptSnapshot = ""; // 전송 시점의 사용자 질문을 잡아두기
+  let lastPromptSnapshot = ""; 
 
   const SELECTORS = {
     assistantTurn: '[data-testid="conversation-turn"][data-message-author-role="assistant"]',
@@ -335,17 +379,15 @@
   hookSendButtons();
   hookKeydownSend();
 
-
   if (typeof window !== 'undefined') {
     window.AnswerOverlay = Object.assign(window.AnswerOverlay || {}, { show: showAnswerOverlay });
   }
-
 
   function openNewReport({ original_text, redacted_text, answer_text, types }) {
     const BASE = "http://127.0.0.1:5000";
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = `${BASE}/report/preview_gpt`;   // report처럼 HTTP로 열기
+    form.action = `${BASE}/report/preview_gpt`;   
     form.target = "_blank";
 
     const add = (k, v) => {
@@ -363,22 +405,6 @@
     form.submit();
     form.remove();
   }
-
-  const reportBtn = shadow.getElementById('ans-report');
-  if (reportBtn) {
-    reportBtn.addEventListener('click', () => {
-      openNewReport({
-        original_text: prompt ?? '',
-        redacted_text: meta?.redacted_prompt ?? '',
-        answer_text:   String(answer ?? ''),
-        types:         meta?.types || []
-      });
-    });
-  }
-
-btn.addEventListener("click", () => {
-  window.open("/newreport", "_blank");
-});
-
+  
   console.log(LOG_PREFIX, "ready: arm on send; capture first assistant answer; show overlay.");
 })();
