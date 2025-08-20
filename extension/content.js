@@ -34,7 +34,8 @@ async function __showAnswerOverlay(fullText) {
     return;
   }
 
-  const action = await show({ prompt, answer: fullText, meta: null });
+  const meta = (window.__FAKE_PROMPT__ || null);
+  const action = await show({ prompt, answer: fullText, meta });
 }
 
 let __armTime = 0;
@@ -523,24 +524,27 @@ async function forwardSend(initialInputEl) {
     ]);
   } catch (e) { console.warn("pre-send failed:", e); }
 
+  window.__FAKE_PROMPT__ = textPayload ? {
+    redacted_prompt: (textPayload.fake_text || ""),
+    mapping: (textPayload.restore_map || {}),
+    types: (textPayload.types || [])
+  } : null;
+
+  let combinedChoice = null;
+  
+  if (imagePayload || filePayload) {
   const { showCombinedOverlay } = await loadOverlayModule();
-  const combinedChoice = await showCombinedOverlay({
-    text: (textPayload || originalText) ? {
-      original: textPayload?.original_text ?? originalText,
-      redacted: textPayload?.redacted_text ?? originalText,
-      entities: textPayload?.entities, types: textPayload?.types
-    } : null,
-    image: imagePayload || null,
-    files: filePayload ? [ filePayload ] : null
-  });
-  if (!combinedChoice) { blockNativeSend(false); return; }
+    combinedChoice = await showCombinedOverlay({
+      text: null,                                  
+      image: imagePayload || null,
+      files: filePayload ? [filePayload] : null,
+    });
+    if (!combinedChoice) { blockNativeSend(false); return; }
+  }
 
   await hardResetComposer();
 
-  const finalText =
-    textPayload && combinedChoice?.text === 'redacted'
-      ? (textPayload.redacted_text || originalText || "")
-      : (originalText || "");
+  const finalText = textPayload?.fake_text ?? originalText ?? "";
 
   const el = findActiveInputField();
   setInputValue(el, finalText);
