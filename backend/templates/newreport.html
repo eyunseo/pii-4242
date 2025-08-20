@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>PII 상세 리포트</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='report.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <h1>개인정보 <span class="hl">{{ type_count }}</span>건이 탐지되어 비식별 처리되었습니다.</h1>
+
+    <p class="subtitle">탐지된 데이터 종류:
+      {% for t in types %}
+        <span class="tag">{{ t }}</span>
+      {% endfor %}
+    </p>
+
+    <div class="cols">
+      <section class="card">
+        <h2>원본 데이터</h2>
+        <pre class="bubble">{{ original }}</pre>
+      </section>
+      <div class="arrow">➜</div>
+      <section class="card">
+        <h2>비식별 데이터</h2>
+
+        <pre class="bubble safe">{{ redacted }}</pre>
+      </section>
+    </div>
+
+    <div class="cols mt">
+      <section class="card">
+        <h2>모델 답변</h2>
+        <pre id="gpt-answer" class="bubble">{{ answer }}</pre>
+      </section>
+      <div class="arrow" style="opacity:.25;">&nbsp;</div>
+      <section class="card">
+        <h2>오른쪽 패널</h2>
+        <div id="right-panel" class="bubble" style="min-height:140px; white-space:pre-wrap;"></div>
+      </section>
+    </div>
+
+    <section class="card mt">
+      <h2>요약 설명</h2>
+      <div id="risk-badges" class="badges"></div>
+      <p id="risk-summary" class="summary muted">(분석 중…)</p>
+    </section>
+
+    <section class="card mt">
+      <h2>결과 요약</h2>
+      <div class="table-wrap">
+        <table id="sum-table" class="table" style="display:none;">
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>탐지 수</th>
+              <th>비식별화 예시</th>
+              <th>영향도</th>
+              <th>탐지 근거</th>
+            </tr>
+          </thead>
+          <tbody id="sum-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card mt">
+      <h2>상세 설명</h2>
+      <div class="table-wrap">
+        <table id="risk-table" class="table" style="display:none;">
+          <thead>
+            <tr>
+              <th>유형</th>
+              <th>건수</th>
+              <th>위험 설명</th>
+              <th>권장조치</th>
+            </tr>
+          </thead>
+          <tbody id="risk-tbody"></tbody>
+        </table>
+      </div>
+      <p class="note">⚠️ 본 리포트는 브라우저에서 일시 생성되며 서버/DB에 저장하지 않습니다.</p>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='report.js') }}"></script>
+</body>
+</html>
