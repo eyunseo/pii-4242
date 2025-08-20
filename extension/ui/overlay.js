@@ -83,7 +83,6 @@ export async function showCombinedOverlay({ text, image, files }) {
 
     const textToggle = document.createElement('div');
     textToggle.className = 'toggle text-toggle';
-    textToggle.style.margin = '8px 0';
     textToggle.innerHTML = `
       <label style="margin-right:12px;">
         <input type="radio" name="textChoice" value="original" checked> 텍스트 원본
@@ -118,7 +117,6 @@ export async function showCombinedOverlay({ text, image, files }) {
 
     const imgToggle = document.createElement('div');
     imgToggle.className = 'toggle image-toggle';
-    imgToggle.style.margin = '8px 0';
     imgToggle.innerHTML = `
       <label style="margin-right:12px;">
         <input type="radio" name="imageChoice" value="original" checked> 이미지 원본
@@ -146,7 +144,7 @@ export async function showCombinedOverlay({ text, image, files }) {
   let fileChoiceArray = null;
   if (Array.isArray(files) && files.length) {
     fileCols.style.display = 'grid';
-    const file = files[0]; 
+    const file = files[0];
     const origList   = shadow.getElementById('fileOrigList');
     const maskedList = shadow.getElementById('fileMaskedList');
 
@@ -186,7 +184,6 @@ export async function showCombinedOverlay({ text, image, files }) {
 
     const fileToggle = document.createElement('div');
     fileToggle.className = 'toggle file-toggle';
-    fileToggle.style.margin = '8px 0';
     fileToggle.innerHTML = `
       <label style="margin-right:12px;">
         <input type="radio" name="fileChoice0" value="original" checked> 파일 원본

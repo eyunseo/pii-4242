@@ -1,40 +1,44 @@
 <template id="pii-guard-tpl">
   <div id="overlay" role="dialog" aria-modal="true">
     <div class="card">
-      <h3>⚠️ 개인정보 감지</h3>
-      <p id="types"></p>
-
-      <div class="cols" id="text-cols">
-        <section>
-          <h4>원본 데이터</h4>
-          <pre id="orig"></pre>
-        </section>
-        <section class="safe">
-          <h4>비식별 데이터</h4>
-          <pre id="redacted"></pre>
-        </section>
+      <div class="head">
+        <h3>⚠️ 개인정보 감지</h3>
+        <p id="types"></p>
       </div>
 
-      <div class="cols" id="image-cols" style="display:none">
-        <section>
-          <h4>원본 이미지</h4>
-          <img id="origImg" style="max-width:100%;height:auto;border-radius:8px"/>
-        </section>
-        <section class="safe">
-          <h4>마스킹 이미지</h4>
-          <img id="maskedImg" style="max-width:100%;height:auto;border-radius:8px"/>
-        </section>
-      </div>
+      <div class="body" id="body">
+        <div class="cols" id="text-cols">
+          <section>
+            <h4>원본 데이터</h4>
+            <pre id="orig"></pre>
+          </section>
+          <section class="safe">
+            <h4>비식별 데이터</h4>
+            <pre id="redacted"></pre>
+          </section>
+        </div>
 
-      <div class="cols" id="file-cols" style="display:none">
-        <section>
-          <h4>원본 파일(미리보기)</h4>
-          <div id="fileOrigList" class="bubble"></div>
-        </section>
-        <section class="safe">
-          <h4>비식별 파일(미리보기)</h4>
-          <div id="fileMaskedList" class="bubble"></div>
-        </section>
+        <div class="cols" id="image-cols" style="display:none">
+          <section>
+            <h4>원본 이미지</h4>
+            <img id="origImg" />
+          </section>
+          <section class="safe">
+            <h4>마스킹 이미지</h4>
+            <img id="maskedImg" />
+          </section>
+        </div>
+
+        <div class="cols" id="file-cols" style="display:none">
+          <section>
+            <h4>원본 파일(미리보기)</h4>
+            <div id="fileOrigList" class="bubble"></div>
+          </section>
+          <section class="safe">
+            <h4>비식별 파일(미리보기)</h4>
+            <div id="fileMaskedList" class="bubble"></div>
+          </section>
+        </div>
       </div>
 
       <div class="actions">
