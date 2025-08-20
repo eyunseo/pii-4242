@@ -16,8 +16,8 @@ export function openReport(payload){
 }
 
 async function loadHTMLAndCSS(shadowRoot) {
-  const cssURL  = chrome.runtime.getURL('ui/overlay.css');
-  const htmlURL = chrome.runtime.getURL('ui/overlay.html');
+  const cssURL  = (chrome?.runtime||browser?.runtime).getURL('ui/overlay.css');
+  const htmlURL = (chrome?.runtime||browser?.runtime).getURL('ui/overlay.html');
 
   const style = document.createElement('link');
   style.rel = 'stylesheet'; style.href = cssURL;
@@ -30,46 +30,21 @@ async function loadHTMLAndCSS(shadowRoot) {
   shadowRoot.appendChild(node);
 }
 
-export async function showOverlay(payload) {
-  const host = document.createElement('div');
-  const shadow = host.attachShadow({mode:'open'});
-  document.documentElement.appendChild(host);
-
-  await loadHTMLAndCSS(shadow);
-
-  shadow.getElementById('types').textContent =
-    payload.types?.length ? `탐지된 종류: ${payload.types.join(', ')}` : '탐지 없음';
-
-  const textCols   = shadow.getElementById('text-cols');
-  const imageCols  = shadow.getElementById('image-cols');
-
-  if (payload.kind === 'image') {
-    textCols.style.display  = 'none';
-    imageCols.style.display = 'grid';
-    const { orig_base64, masked_base64 } = payload;
-    if (orig_base64)   shadow.getElementById('origImg').src   = `data:image/*;base64,${orig_base64}`;
-    if (masked_base64) shadow.getElementById('maskedImg').src = `data:${payload.masked_mime||'image/png'};base64,${masked_base64}`;
-  } else {
-    shadow.getElementById('orig').textContent     = payload.original_text ?? '';
-    shadow.getElementById('redacted').textContent = payload.redacted_text ?? '';
-  }
-
-  return new Promise((resolve)=>{
-    const close = (val)=>{ host.remove(); resolve(val); };
-    const reportBtn = shadow.getElementById('pii-report');
-    if (reportBtn) reportBtn.onclick = () => openReport(payload);
-
-    shadow.getElementById('use-original').addEventListener('click', ()=>close('original'));
-    shadow.getElementById('use-redacted').addEventListener('click', ()=>close('redacted'));
-  });
+function _mergeTypeLabels(oldText, addText) {
+  const a = (oldText||"").trim();
+  if (!a) return addText||"";
+  if (!addText) return a;
+  return `${a} · ${addText}`;
 }
 
 /**
  * @param {{ text: null | { original:string, redacted:string, entities?:any, types?:string[] },
- *           image: null | { kind:'image', types?:string[], original:{base64,mime,fileName}, redacted:{base64,mime,fileName}, _inject?:any } }} param0
- * @returns {Promise<{text:('original'|'redacted'|null), image:('original'|'redacted'|null)}>}
+ *           image: null | { kind:'image', types?:string[], original:{base64,mime,fileName}, redacted:{base64,mime,fileName} },
+ *           files: null | Array<{ kind:'file', original_name:string, types?:string[], total_count?:number,
+ *                                  preview:Array<any>, redacted:{base64:string,mime:string,fileName:string} }> }} param0
+ * @returns {Promise<{text:('original'|'redacted'|null), image:('original'|'redacted'|null), files:null|('original'|'redacted')[] }>}
  */
-export async function showCombinedOverlay({ text, image }) {
+export async function showCombinedOverlay({ text, image, files }) {
   const host = document.createElement('div');
   const shadow = host.attachShadow({mode:'open'});
   document.documentElement.appendChild(host);
@@ -78,10 +53,12 @@ export async function showCombinedOverlay({ text, image }) {
 
   const textCols   = shadow.getElementById('text-cols');
   const imageCols  = shadow.getElementById('image-cols');
+  const fileCols   = shadow.getElementById('file-cols');
   const typesLabel = shadow.getElementById('types');
-  const btnOriginal = shadow.getElementById('use-original');
-  const btnRedacted = shadow.getElementById('use-redacted');
-  const reportBtn   = shadow.getElementById('pii-report');
+  const btnOriginal= shadow.getElementById('use-original');
+  const btnRedacted= shadow.getElementById('use-redacted');
+  const reportBtn  = shadow.getElementById('pii-report');
+  const cancelBtn  = shadow.getElementById('pii-cancel');
 
   btnOriginal.style.display = 'none';
   btnRedacted.style.display = 'none';
@@ -91,6 +68,12 @@ export async function showCombinedOverlay({ text, image }) {
   confirm.textContent = '확인 및 전송';
   confirm.className = 'btn btn-primary';
   footer.appendChild(confirm);
+
+  const close = (val)=>{ host.remove(); resolve(val); };
+  let resolve;
+  const p = new Promise(r=>{ resolve=r; });
+
+  cancelBtn.addEventListener('click', ()=> close(null));
 
   let textChoice = null;
   if (text) {
@@ -111,7 +94,7 @@ export async function showCombinedOverlay({ text, image }) {
     `;
     textCols.insertAdjacentElement('afterend', textToggle);
     textChoice = 'original';
-    textToggle.addEventListener('change', (e)=>{
+    textToggle.addEventListener('change', ()=>{
       const v = textToggle.querySelector('input[name="textChoice"]:checked')?.value;
       textChoice = (v === 'redacted') ? 'redacted' : 'original';
     });
@@ -124,7 +107,7 @@ export async function showCombinedOverlay({ text, image }) {
     textCols.style.display = 'none';
   }
 
-  let imageChoice = null; // 'original' | 'redacted' | null
+  let imageChoice = null;
   if (image && image.original?.base64) {
     imageCols.style.display = 'grid';
     const origSrc   = `data:${image.original.mime||'image/*'};base64,${image.original.base64}`;
@@ -133,7 +116,6 @@ export async function showCombinedOverlay({ text, image }) {
     if (origSrc)  shadow.getElementById('origImg').src   = origSrc;
     if (redacSrc) shadow.getElementById('maskedImg').src = redacSrc;
 
-    // 이미지 토글 UI
     const imgToggle = document.createElement('div');
     imgToggle.className = 'toggle image-toggle';
     imgToggle.style.margin = '8px 0';
@@ -147,19 +129,85 @@ export async function showCombinedOverlay({ text, image }) {
     `;
     imageCols.insertAdjacentElement('afterend', imgToggle);
     imageChoice = 'original';
-    imgToggle.addEventListener('change', (e)=>{
+    imgToggle.addEventListener('change', ()=>{
       const v = imgToggle.querySelector('input[name="imageChoice"]:checked')?.value;
       imageChoice = (v === 'redacted') ? 'redacted' : 'original';
     });
+
     const it = Array.isArray(image.types) ? image.types : [];
     const prev = (typesLabel.textContent || '').trim();
     if (it.length) {
-      typesLabel.textContent = prev
-        ? `${prev} · 이미지 탐지: ${it.join(', ')}`
-        : `이미지 탐지: ${it.join(', ')}`;
+      typesLabel.textContent = prev ? `${prev} · 이미지 탐지: ${it.join(', ')}` : `이미지 탐지: ${it.join(', ')}`;
     }
   } else {
     imageCols.style.display = 'none';
+  }
+
+  let fileChoiceArray = null;
+  if (Array.isArray(files) && files.length) {
+    fileCols.style.display = 'grid';
+    const file = files[0]; 
+    const origList   = shadow.getElementById('fileOrigList');
+    const maskedList = shadow.getElementById('fileMaskedList');
+
+    const makeKV = (obj) => {
+      if (obj == null) return '(null)';
+      if (typeof obj === 'object') {
+        const lines = [];
+        if (Array.isArray(obj)) {
+          obj.slice(0,5).forEach((v, i)=> lines.push(`- [${i}] ${JSON.stringify(v)}`));
+        } else {
+          Object.entries(obj).slice(0,5).forEach(([k,v])=> lines.push(`- ${k}: ${typeof v==='string'?v:JSON.stringify(v)}`));
+        }
+        return lines.join('\n');
+      }
+      return String(obj);
+    };
+
+    const origLines = [];
+    const maskLines = [];
+    (file.preview||[]).slice(0,5).forEach((p)=>{
+      if (p.kind === 'csv_row') {
+        origLines.push(`[row ${p.index}] ${makeKV(p.original)}`);
+        maskLines.push(`[row ${p.index}] ${makeKV(p.masked)}`);
+      } else if (p.kind === 'json_field') {
+        origLines.push(`[${p.path}] ${makeKV(p.original)}`);
+        maskLines.push(`[${p.path}] ${makeKV(p.masked)}`);
+      } else if (p.kind === 'json_item' || p.kind === 'json_obj') {
+        origLines.push(`[${p.index}] ${makeKV(p.original)}`);
+        maskLines.push(`[${p.index}] ${makeKV(p.masked)}`);
+      } else {
+        origLines.push(makeKV(p.original));
+        maskLines.push(makeKV(p.masked));
+      }
+    });
+    origList.textContent   = origLines.join('\n');
+    maskedList.textContent = maskLines.join('\n');
+
+    const fileToggle = document.createElement('div');
+    fileToggle.className = 'toggle file-toggle';
+    fileToggle.style.margin = '8px 0';
+    fileToggle.innerHTML = `
+      <label style="margin-right:12px;">
+        <input type="radio" name="fileChoice0" value="original" checked> 파일 원본
+      </label>
+      <label ${file.redacted?.base64 ? '' : 'style="opacity:0.5;"'}>
+        <input type="radio" name="fileChoice0" value="redacted" ${file.redacted?.base64 ? '' : 'disabled'}> 파일 비식별
+      </label>
+    `;
+    fileCols.insertAdjacentElement('afterend', fileToggle);
+    fileChoiceArray = ['original'];
+    fileToggle.addEventListener('change', ()=>{
+      const v = fileToggle.querySelector('input[name="fileChoice0"]:checked')?.value;
+      fileChoiceArray[0] = (v === 'redacted') ? 'redacted' : 'original';
+    });
+
+    const add = [];
+    if (Array.isArray(file.types) && file.types.length) add.push(`파일 탐지: ${file.types.join(', ')}`);
+    if (typeof file.total_count === 'number') add.push(`총 탐지: ${file.total_count}건`);
+    if (add.length) typesLabel.textContent = _mergeTypeLabels(typesLabel.textContent, add.join(' · '));
+  } else {
+    fileCols.style.display = 'none';
   }
 
   if (text) {
@@ -172,16 +220,14 @@ export async function showCombinedOverlay({ text, image }) {
     reportBtn.style.display = 'none';
   }
 
-  // 닫기 & 결과 반환
-  return new Promise((resolve)=>{
-    const close = (val)=>{ host.remove(); resolve(val); };
-    confirm.addEventListener('click', ()=>{
-      // 텍스트/이미지 섹션이 없으면 null 유지
-      const res = {
-        text:  text  ? (textChoice  || 'original') : null,
-        image: image ? (imageChoice || 'original') : null,
-      };
-      close(res);
-    });
+  confirm.addEventListener('click', ()=>{
+    const res = {
+      text:  text  ? (textChoice  || 'original') : null,
+      image: image ? (imageChoice || 'original') : null,
+      files: fileChoiceArray || null,
+    };
+    close(res);
   });
+
+  return p;
 }

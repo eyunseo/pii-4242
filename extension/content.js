@@ -1,10 +1,11 @@
-console.log("🟢 content.js boot (auto-send text-only, no synthetic drag)");
+console.log("🟢 content.js boot (text+image+file, auto-send text-only)");
 
 let isForwarding = false;
 let attachTimer = null;
-let allowNativeSendOnce = false; // 다음 1회 네이티브 전송 허용한다.
+let allowNativeSendOnce = false; 
 
-window.__pendingUpload = null;
+window.__pendingUpload = null;      
+window.__pendingDataFile = null;    
 window.__lastFileInput = null;
 window.__PII_SYNTHETIC_DROP__ = false;
 window.__BLOCK_NATIVE_SEND__ = false;
@@ -277,6 +278,14 @@ function isImageFile(file) {
   const name = (file.name || "").toLowerCase();
   return type.startsWith("image/") || /\.(png|jpe?g|webp)$/.test(name);
 }
+function isDataFile(file) {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  if (name.endsWith(".csv")) return true;
+  if (name.endsWith(".json") || name.endsWith(".jsonl")) return true;
+  if (type.includes("json") || type.includes("csv")) return true;
+  return false;
+}
 function readFileAsTextPreview(file, maxLen = 200) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -323,6 +332,17 @@ async function sendFileToServer(file) {
   }
   return res.json();
 }
+async function sendDataFileToServer(file) {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  const res = await fetch("http://127.0.0.1:5000/api/file-mask", { method:"POST", body: fd });
+  if (!res.ok) {
+    let detail=""; try{ const j=await res.json(); detail=j?.error || JSON.stringify(j);}catch{ detail=await res.text().catch(()=> "");}
+    console.error("[file-mask] HTTP",res.status,detail);
+    throw new Error("file-mask failed "+res.status+(detail?(" :: "+detail):""));
+  }
+  return res.json();
+}
 
 async function loadOverlayModule() {
   const rt = (globalThis.chrome && chrome.runtime && typeof chrome.runtime.getURL==="function" && chrome.runtime)
@@ -364,25 +384,46 @@ async function preparePendingImageForOverlay() {
   };
 }
 
-// 메인 흐름
+async function preparePendingDataForOverlay() {
+  const pending = window.__pendingDataFile;
+  if (!pending || !pending.file) return null;
+
+  let result;
+  try { result = await sendDataFileToServer(pending.file); }
+  catch(e){ console.warn("[pii-guard] file-mask failed:", e); return null; }
+  if (!result?.ok) return null;
+
+  return {
+    kind: "file",
+    original_name: result.original_name || pending.file.name || "data",
+    types: result.types || [],
+    total_count: result.total_count || 0,
+    preview: Array.isArray(result.preview) ? result.preview.slice(0,5) : [],
+    redacted: {
+      base64: result.masked_base64 || "",
+      mime: result.masked_mime || "application/octet-stream",
+      fileName: result.masked_name || ("masked_" + (pending.file.name || "data"))
+    },
+    _origFile: pending.file
+  };
+}
+
 async function forwardSend(initialInputEl) {
-  // 1) 네이티브 전송 전면 차단한다.
   blockNativeSend(true);
   allowNativeSendOnce = false;
 
   let inputEl = findActiveInputField() || initialInputEl;
   const originalText = (readText(inputEl) || "").trim();
 
-  // 2) 전처리(텍스트 스캔 + 이미지 ocr)
-  let textPayload=null, imagePayload=null;
+  let textPayload=null, imagePayload=null, filePayload=null;
   try {
     await Promise.all([
       (async()=>{ if (originalText) textPayload = await scanText(originalText); })(),
-      (async()=>{ imagePayload = await preparePendingImageForOverlay(); })()
+      (async()=>{ imagePayload = await preparePendingImageForOverlay(); })(),
+      (async()=>{ filePayload  = await preparePendingDataForOverlay();  })(),
     ]);
   } catch (e) { console.warn("pre-send failed:", e); }
 
-  // 3) 오버레이(텍스트/이미지 개별 선택)
   const { showCombinedOverlay } = await loadOverlayModule();
   const combinedChoice = await showCombinedOverlay({
     text: (textPayload || originalText) ? {
@@ -390,24 +431,21 @@ async function forwardSend(initialInputEl) {
       redacted: textPayload?.redacted_text ?? originalText,
       entities: textPayload?.entities, types: textPayload?.types
     } : null,
-    image: imagePayload // null이면 이미지 섹션 숨김
+    image: imagePayload || null,
+    files: filePayload ? [ filePayload ] : null
   });
   if (!combinedChoice) { blockNativeSend(false); return; }
 
-  // 4) 하드 리셋으로 원본 완전 제거
   await hardResetComposer();
 
-  // 5) 최종 텍스트/이미지 재구성 (비식별/원본 중 선택본만)
   const finalText =
     textPayload && combinedChoice?.text === 'redacted'
       ? (textPayload.redacted_text || originalText || "")
       : (originalText || "");
 
-  // 텍스트 주입
   const el = findActiveInputField();
   setInputValue(el, finalText);
 
-  // 이미지 주입
   let attachedAnyImage = false;
   if (combinedChoice?.image && imagePayload) {
     let fileToAttach = null;
@@ -419,23 +457,37 @@ async function forwardSend(initialInputEl) {
     if (fileToAttach) {
       const ok = await attachFileOnly(fileToAttach);
       attachedAnyImage = !!ok;
-      if (!ok) console.warn("[pii-guard] attach failed after reset — sending text only if auto-send chosen");
+      if (!ok) console.warn("[pii-guard] attach failed after reset — image");
     }
   }
 
-  // 6) 자동 전송 정책
-  const hasImage = attachedAnyImage || !!(combinedChoice?.image && imagePayload);
-  if (hasImage) {
-    // 이미지가 있으면 자동 전송 금지 — 사용자에게 맡김
+  let attachedAnyBinary = false;
+  if (combinedChoice?.files && Array.isArray(combinedChoice.files) && filePayload) {
+    const choice = combinedChoice.files[0]; 
+    let fileToAttach = null;
+    if (choice === 'redacted' && filePayload.redacted?.base64) {
+      const bin = atob(filePayload.redacted.base64);
+      const buf = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+      const blob = new Blob([buf], { type: filePayload.redacted.mime || "application/octet-stream" });
+      fileToAttach = new File([blob], filePayload.redacted.fileName || "masked_data", { type: blob.type });
+    } else if (choice === 'original' && filePayload._origFile) {
+      fileToAttach = filePayload._origFile;
+    }
+    if (fileToAttach) {
+      const ok = await attachFileOnly(fileToAttach);
+      attachedAnyBinary = attachedAnyBinary || !!ok;
+      if (!ok) console.warn("[pii-guard] attach failed for data file");
+    }
+  }
+  const hasBinary = attachedAnyImage || attachedAnyBinary || !!imagePayload || !!filePayload;
+  if (hasBinary) {
     allowNativeSendOnce = true;
     blockNativeSend(false);
     return;
   } else {
-    // 텍스트만 있으면 — 자동 전송
     isForwarding = true; 
     detachHandlers();
 
-    // 자동 전송 직전에 전역 차단을 해제하고 1회 통과 허용한다.
     allowNativeSendOnce = true;
     blockNativeSend(false);
 
@@ -449,6 +501,7 @@ async function forwardSend(initialInputEl) {
       }
     } finally {
       window.__pendingUpload = null;
+      window.__pendingDataFile = null;
       setTimeout(()=>{
         allowNativeSendOnce = false; 
         isForwarding = false;
@@ -461,11 +514,7 @@ async function forwardSend(initialInputEl) {
 function onKeyDown(e){
   if (isForwarding) return;
   if (e.key==="Enter" && !e.shiftKey){
-    if (allowNativeSendOnce) {
-      // 이번 1회는 네이티브 전송 허용
-      allowNativeSendOnce = false;
-      return;
-    }
+    if (allowNativeSendOnce) { allowNativeSendOnce = false; return; }
     blockNativeSend(true);
     e.preventDefault(); e.stopPropagation();
     forwardSend(getDeepActiveElement());
@@ -473,10 +522,7 @@ function onKeyDown(e){
 }
 function onClickSend(e){
   if (isForwarding) return;
-  if (allowNativeSendOnce) {
-    allowNativeSendOnce = false;
-    return;
-  }
+  if (allowNativeSendOnce) { allowNativeSendOnce = false; return; }
   blockNativeSend(true);
   e.preventDefault(); e.stopPropagation();
   forwardSend(getDeepActiveElement());
@@ -500,7 +546,6 @@ function detachHandlers(){
   attachHandlers();
 })();
 
-/* ------------------------- upload capture only ------------------------- */
 (function bindFileInputs(root=document){
   root.addEventListener("change", async (event) => {
     const el = event.target;
@@ -511,6 +556,9 @@ function detachHandlers(){
     if (isImageFile(f)) {
       window.__pendingUpload = { file:f, inputEl: el };
       console.log("[pii-guard] pending image saved:", f.name);
+    } else if (isDataFile(f)) {
+      window.__pendingDataFile = { file:f, inputEl: el };
+      console.log("[pii-guard] pending data file saved:", f.name);
     } else if (isTextLikeFile(f)) {
       const preview = await readFileAsTextPreview(f); console.log("[pii-guard] text preview:", preview);
     }
@@ -528,10 +576,13 @@ function detachHandlers(){
     if (isImageFile(f)) {
       window.__pendingUpload = { file:f, inputEl: target || null };
       console.log("[pii-guard] pending image (drop) saved:", f.name);
+    } else if (isDataFile(f)) {
+      window.__pendingDataFile = { file:f, inputEl: target || null };
+      console.log("[pii-guard] pending data file (drop) saved:", f.name);
     } else if (isTextLikeFile(f)) {
       const txt = await readFileAsTextPreview(f); console.log("[pii-guard] text preview (drop):", txt);
     }
   }, true);
 })(document);
 
-console.log("🟢 content.js initialized (text-only auto-send mode)");
+console.log("🟢 content.js initialized (text+image+file)");
