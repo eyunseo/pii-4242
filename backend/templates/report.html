@@ -26,28 +26,51 @@
       </section>
     </div>
 
-    <!-- GPT 위험 설명 (JSON → HTML 변환) -->
-     <!-- report.html 내, 위험 설명 섹션 -->
+    <!-- 요약 설명 -->
     <section class="card mt">
-      <h2>위험 설명</h2>
+      <h2>요약 설명</h2>
       <div id="risk-badges" class="badges"></div>
       <p id="risk-summary" class="summary muted">(분석 중…)</p>
+    </section>
+
+    <section class="card mt">
+      <h2>결과 요약</h2>
+      <div class="table-wrap">
+        <table id="sum-table" class="table" style="display:none;">
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>탐지 수</th>
+              <th>비식별화 예시</th>
+              <th>영향도</th>
+              <th>탐지 근거</th>
+            </tr>
+          </thead>
+          <tbody id="sum-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 상세 설명 -->
+    <section class="card mt">
+      <h2>상세 설명</h2>
       <div class="table-wrap">
         <table id="risk-table" class="table" style="display:none;">
           <thead>
             <tr>
-              <th>유형</th><th>건수</th><th>영향</th><th>가능성</th><th>권장조치</th>
+              <th>유형</th>
+              <th>건수</th>
+              <th>위험 설명</th>
+              <th>권장조치</th>
             </tr>
           </thead>
           <tbody id="risk-tbody"></tbody>
         </table>
       </div>
+      <p class="note">⚠️ 본 리포트는 브라우저에서 일시 생성되며 서버/DB에 저장하지 않습니다.</p>
     </section>
-
-    <div id="gpt-report"></div>
   </div>
 
-  <!-- JS는 외부파일로 -->
   <script src="{{ url_for('static', filename='report.js') }}"></script>
 </body>
 </html>

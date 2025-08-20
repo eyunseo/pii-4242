@@ -7,18 +7,20 @@
     "*://chat.openai.com/*",
     "*://chatgpt.com/*",
     "http://127.0.0.1:5000/*",
-    "http://localhost:5000/*"
+    "http://localhost:5000/*",
+    "https://gemini.google.com/*"
+
   ],
   "background": { "service_worker": "background.js" },
   "content_scripts": [{
-    "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*"],
+    "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*", "https://gemini.google.com/*"],
     "js": ["content.js"],
     "run_at": "document_idle",
     "all_frames": true
   }],
   "web_accessible_resources": [{
-    "resources": ["ui/*"],
-    "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*"]
+    "resources": ["ui/*", "ui/overlay.js"],
+    "matches": ["*://chat.openai.com/*", "*://chatgpt.com/*", "https://gemini.google.com/*"]
   }],
   "action": { "default_popup": "popup.html" }
 }
